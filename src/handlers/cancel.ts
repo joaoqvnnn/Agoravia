@@ -1,13 +1,18 @@
 import { Context } from 'telegraf';
 import { db } from '../db';
+import { cancelPix } from '../services/pix';
 import { startHandler } from './start';
 
-/**
- * /cancelar — limpa o estado temporário e volta ao menu principal.
- * Nunca cancela compras/pagamentos já confirmados.
- */
 export async function cancelHandler(ctx: Context): Promise<void> {
   if (!ctx.from) return;
+
+  // Cancela PIX de compra pendente (nunca pagamentos confirmados)
+  const pending = await db.query(
+    `SELECT reference FROM pix_payments
+     WHERE user_id = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1`,
+    [ctx.from.id],
+  );
+  if (pending.rows[0]) await cancelPix(pending.rows[0].reference);
 
   await db.query(
     `UPDATE user_sessions
@@ -16,9 +21,6 @@ export async function cancelHandler(ctx: Context): Promise<void> {
     [ctx.from.id],
   );
 
-  // Deleta o comando /cancelar enviado pelo usuário, quando possível
-  try { await ctx.deleteMessage(); } catch { /* ignora */ }
-
-  // Reexibe welcome editando a última mensagem, se houver
+  try { await ctx.deleteMessage(); } catch {}
   await startHandler(ctx);
 }
